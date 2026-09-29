@@ -172,3 +172,7 @@ mock_display_output/
 # Static Files added by install/update_vendors.sh
 /src/static/scripts/
 /src/static/styles/
+
+# Device-specific config (created by install.sh from install/config_base); may contain private calendar URLs
+/src/config/device.json
+/src/config/device.json.bak*
