@@ -1,15 +1,20 @@
 import logging
 from dataclasses import dataclass
 
+import requests
 from PIL import Image, ImageDraw
 
 from plugins.plugin_registry import get_plugin_instance
+from utils.http_client import get_http_session
 from utils.image_utils import resize_image
 
 logger = logging.getLogger(__name__)
 
 PIP_CORNERS = ["top-left", "top-right", "bottom-left", "bottom-right"]
 INSTANCE_REF_SEPARATOR = "/"
+TEXT_POSITIONS = ["top", "bottom"]
+TEXT_ALIGNMENTS = ["left", "center", "right"]
+MAX_OVERLAY_TEXT_LENGTH = 500
 
 
 @dataclass
@@ -136,3 +141,51 @@ def compose(canvas_size, layers, border_width=0, border_color="black"):
                 width=border_width,
             )
     return canvas
+
+
+def fetch_overlay_text(url, timeout=10):
+    """Fetches plain text to overlay from a URL. Returns None if it can't be retrieved,
+    so a failing text source never stops the rest of the layout from displaying."""
+    try:
+        response = get_http_session().get(url, timeout=timeout)
+        response.raise_for_status()
+    except requests.RequestException as e:
+        logger.warning(f"Failed to fetch overlay text. | url: {url} | error: {e}")
+        return None
+    # requests assumes ISO-8859-1 for text/* without a charset, which garbles emoji and accents
+    if "charset" not in response.headers.get("Content-Type", "").lower():
+        response.encoding = "utf-8"
+    return response.text.strip()[:MAX_OVERLAY_TEXT_LENGTH]
+
+
+def draw_text_overlay(canvas, text, font, position="top", align="center", color="black",
+                      background=None, padding=8, margin=0):
+    """Draws text along the top or bottom edge of the canvas, optionally on a filled box.
+
+    Multi-line text is supported, with lines aligned the same way as the block.
+    Returns the Region the text box occupies.
+    """
+    if position not in TEXT_POSITIONS:
+        raise ValueError(f"Invalid text position '{position}', expected one of {TEXT_POSITIONS}")
+    if align not in TEXT_ALIGNMENTS:
+        raise ValueError(f"Invalid text alignment '{align}', expected one of {TEXT_ALIGNMENTS}")
+
+    draw = ImageDraw.Draw(canvas)
+    left, top, right, bottom = draw.multiline_textbbox((0, 0), text, font=font, align=align)
+    box_width = (right - left) + 2 * padding
+    box_height = (bottom - top) + 2 * padding
+    canvas_width, canvas_height = canvas.size
+
+    if align == "left":
+        x = margin
+    elif align == "right":
+        x = canvas_width - box_width - margin
+    else:
+        x = (canvas_width - box_width) // 2
+    y = margin if position == "top" else canvas_height - box_height - margin
+
+    if background:
+        draw.rectangle([x, y, x + box_width - 1, y + box_height - 1], fill=background)
+    # offset by the bbox origin so the glyphs sit exactly inside the padded box
+    draw.multiline_text((x + padding - left, y + padding - top), text, font=font, fill=color, align=align)
+    return Region(x, y, box_width, box_height)
