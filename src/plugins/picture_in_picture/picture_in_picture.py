@@ -1,8 +1,10 @@
 from plugins.base_plugin.base_plugin import BasePlugin
 from layout_manager import (
-    PIP_CORNERS, Region, compose, compute_pip_region, get_canvas_size,
-    parse_instance_ref, render_plugin_instance,
+    PIP_CORNERS, TEXT_ALIGNMENTS, TEXT_POSITIONS, Region, compose, compute_pip_region,
+    draw_text_overlay, fetch_overlay_text, get_canvas_size, parse_instance_ref,
+    render_plugin_instance,
 )
+from utils.app_utils import FONT_FAMILIES, get_font
 import logging
 
 logger = logging.getLogger(__name__)
@@ -12,6 +14,9 @@ DEFAULT_SIZE_PERCENT = 35
 DEFAULT_MARGIN = 10
 DEFAULT_BORDER_WIDTH = 2
 DEFAULT_RENDER_MODE = "scale"
+DEFAULT_TEXT_FONT = "Jost"
+DEFAULT_TEXT_SIZE = 48
+DEFAULT_TEXT_MARGIN = 0
 
 
 class PictureInPicture(BasePlugin):
@@ -21,6 +26,9 @@ class PictureInPicture(BasePlugin):
     def generate_settings_template(self):
         template_params = super().generate_settings_template()
         template_params['corners'] = PIP_CORNERS
+        template_params['text_positions'] = TEXT_POSITIONS
+        template_params['text_alignments'] = TEXT_ALIGNMENTS
+        template_params['font_families'] = list(FONT_FAMILIES)
         return template_params
 
     def generate_image(self, settings, device_config):
@@ -46,10 +54,40 @@ class PictureInPicture(BasePlugin):
         overlay_render_size = canvas_size if render_mode == "scale" else overlay_region.size
         overlay = render_plugin_instance(device_config, overlay_ref, overlay_region.size, overlay_render_size)
 
-        return compose(
+        image = compose(
             canvas_size,
             [(background, background_region), (overlay, overlay_region)],
             border_width=int(border_width),
+        )
+        self._draw_text_overlay(image, settings)
+        return image
+
+    def _draw_text_overlay(self, image, settings):
+        """Overlays text fetched from the configured URL, if one is set."""
+        text_url = (settings.get('textUrl') or '').strip()
+        if not text_url:
+            return
+
+        text = fetch_overlay_text(text_url)
+        if not text:
+            return
+
+        font_size = int(_to_number(settings.get('textSize'), DEFAULT_TEXT_SIZE))
+        font = get_font(settings.get('textFont') or DEFAULT_TEXT_FONT, font_size, settings.get('textWeight') or "normal")
+        if font is None:
+            font = get_font(DEFAULT_TEXT_FONT, font_size)
+
+        background = settings.get('textBackgroundColor') if settings.get('textBackground') == "box" else None
+        draw_text_overlay(
+            image,
+            text,
+            font,
+            position=settings.get('textPosition') or "top",
+            align=settings.get('textAlign') or "center",
+            color=settings.get('textColor') or "#000000",
+            background=background,
+            padding=max(4, font_size // 6),
+            margin=int(_to_number(settings.get('textMargin'), DEFAULT_TEXT_MARGIN)),
         )
 
 

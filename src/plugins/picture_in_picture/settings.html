@@ -67,8 +67,78 @@
 </div>
 
 <div class="form-group">
+    <label class="form-label"><strong>Text Overlay</strong></label>
+    <span>Optional. Text is fetched from the URL each time the display refreshes and drawn over everything else.</span>
+</div>
+
+<div class="form-group">
+    <label for="textUrl" class="form-label">Text URL:</label>
+    <input type="url" id="textUrl" name="textUrl" class="form-input" placeholder="https://example.com/dog-walk.txt (leave blank for no text)">
+</div>
+
+<div class="form-group">
+    <label for="textPosition" class="form-label">Text Position:</label>
+    <select id="textPosition" name="textPosition" class="form-input">
+        {% for position in text_positions %}
+        <option value="{{ position }}">{{ position | title }}</option>
+        {% endfor %}
+    </select>
+    <label for="textAlign" class="form-label">Align:</label>
+    <select id="textAlign" name="textAlign" class="form-input">
+        {% for alignment in text_alignments %}
+        <option value="{{ alignment }}" {% if alignment == "center" %}selected{% endif %}>{{ alignment | title }}</option>
+        {% endfor %}
+    </select>
+</div>
+
+<div class="form-group">
+    <label for="textFont" class="form-label">Font:</label>
+    <select id="textFont" name="textFont" class="form-input">
+        {% for font in font_families %}
+        <option value="{{ font }}" {% if font == "Jost" %}selected{% endif %}>{{ font }}</option>
+        {% endfor %}
+    </select>
+    <label for="textWeight" class="form-label">Weight:</label>
+    <select id="textWeight" name="textWeight" class="form-input">
+        <option value="normal">Normal</option>
+        <option value="bold">Bold</option>
+    </select>
+</div>
+
+<div class="form-group">
+    <label for="textSize" class="form-label">Font Size:</label>
+    <div class="form-group nowrap">
+        <input type="number" id="textSize" name="textSize" class="form-input" min="8" max="400" step="1" value="48"><span>px</span>
+    </div>
+</div>
+
+<div class="form-group">
+    <label for="textColor" class="form-label">Text Color:</label>
+    <input type="color" id="textColor" name="textColor" class="color-picker" value="#000000">
+</div>
+
+<div class="form-group">
+    <label for="textBackground" class="form-label">Text Background:</label>
+    <div class="form-group nowrap">
+        <select id="textBackground" name="textBackground" class="form-input">
+            <option value="box">Filled box</option>
+            <option value="none">None</option>
+        </select>
+        <input type="color" id="textBackgroundColor" name="textBackgroundColor" class="color-picker" value="#ffffff">
+    </div>
+</div>
+
+<div class="form-group">
+    <label for="textMargin" class="form-label">Text Margin:</label>
+    <div class="form-group nowrap">
+        <input type="number" id="textMargin" name="textMargin" class="form-input" min="0" max="200" step="1" value="0"><span>px</span>
+    </div>
+</div>
+
+<div class="form-group">
     <label class="form-label">Preview:</label>
     <div id="pipPreview" style="position: relative; width: 240px; aspect-ratio: {{ resolution[0] }} / {{ resolution[1] }}; border: 1px solid var(--border-color); background: var(--input-bg); box-sizing: border-box;">
+        <div id="pipPreviewText" style="position: absolute; display: none; width: 40%; height: 8%; background: var(--accent-hover);"></div>
         <div id="pipPreviewOverlay" style="position: absolute; box-sizing: border-box; border: 2px solid var(--accent-hover); background: var(--input-focus);"></div>
     </div>
 </div>
@@ -86,11 +156,21 @@
         overlay.style.bottom = corner.startsWith('bottom') ? '0' : '';
         overlay.style.left = corner.endsWith('left') ? '0' : '';
         overlay.style.right = corner.endsWith('right') ? '0' : '';
+
+        const text = document.getElementById('pipPreviewText');
+        const textAlign = document.getElementById('textAlign').value;
+        text.style.display = document.getElementById('textUrl').value.trim() ? 'block' : 'none';
+        text.style.top = document.getElementById('textPosition').value === 'top' ? '0' : '';
+        text.style.bottom = document.getElementById('textPosition').value === 'bottom' ? '0' : '';
+        text.style.left = textAlign === 'left' ? '0' : (textAlign === 'center' ? '30%' : '');
+        text.style.right = textAlign === 'right' ? '0' : '';
     }
 
     document.addEventListener('DOMContentLoaded', () => {
         if (loadPluginSettings) {
-            ['background', 'overlay', 'corner', 'overlaySize', 'renderMode', 'margin', 'borderWidth'].forEach(id => {
+            ['background', 'overlay', 'corner', 'overlaySize', 'renderMode', 'margin', 'borderWidth',
+             'textUrl', 'textPosition', 'textAlign', 'textFont', 'textWeight', 'textSize', 'textColor',
+             'textBackground', 'textBackgroundColor', 'textMargin'].forEach(id => {
                 if (pluginSettings[id] !== undefined && pluginSettings[id] !== '') {
                     document.getElementById(id).value = pluginSettings[id];
                 }
@@ -98,6 +178,8 @@
         }
         document.getElementById('overlaySize').addEventListener('input', updatePipPreview);
         document.getElementById('corner').addEventListener('change', updatePipPreview);
+        ['textUrl', 'textPosition', 'textAlign'].forEach(id =>
+            document.getElementById(id).addEventListener('input', updatePipPreview));
         updatePipPreview();
     });
 </script>

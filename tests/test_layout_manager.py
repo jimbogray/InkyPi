@@ -141,3 +141,97 @@ class TestRenderAndCompose:
         assert canvas.getpixel((region.x, region.y)) == (0, 0, 0)
         assert canvas.getpixel((789, 469)) == (0, 0, 0)
         assert canvas.getpixel((795, 475)) == (255, 0, 0)
+
+
+class TestTextOverlay:
+
+    @pytest.fixture
+    def font(self):
+        from utils.app_utils import get_font
+        return get_font("Jost", 40, "bold")
+
+    @pytest.mark.parametrize(
+        "position,align",
+        [(p, a) for p in layout_manager.TEXT_POSITIONS for a in layout_manager.TEXT_ALIGNMENTS],
+    )
+    def test_box_placement(self, font, position, align):
+        canvas = Image.new("RGB", (800, 480), "white")
+        box = layout_manager.draw_text_overlay(
+            canvas, "Walk: Sam", font, position=position, align=align,
+            background="#ff0000", padding=6, margin=10)
+
+        assert box.y == (10 if position == "top" else 480 - box.height - 10)
+        expected_x = {"left": 10, "right": 800 - box.width - 10, "center": (800 - box.width) // 2}[align]
+        assert box.x == expected_x
+        # the box is filled and the text is drawn inside it
+        assert canvas.getpixel((box.x + 1, box.y + 1)) == (255, 0, 0)
+        inside = canvas.crop((box.x, box.y, box.x + box.width, box.y + box.height))
+        assert (0, 0, 0) in {colour for _, colour in inside.getcolors(maxcolors=100000)}
+
+    def test_multiline_text_is_taller(self, font):
+        canvas = Image.new("RGB", (800, 480), "white")
+        one = layout_manager.draw_text_overlay(canvas, "Today: Sam", font)
+        two = layout_manager.draw_text_overlay(canvas, "Today: Sam\nTomorrow: Alex", font)
+        assert two.height > one.height
+
+    def test_no_background_leaves_canvas_untouched_around_text(self, font):
+        canvas = Image.new("RGB", (800, 480), "blue")
+        box = layout_manager.draw_text_overlay(canvas, "Sam", font, background=None, padding=6)
+        assert canvas.getpixel((box.x + 1, box.y + 1)) == (0, 0, 255)
+
+    def test_invalid_position(self, font):
+        with pytest.raises(ValueError):
+            layout_manager.draw_text_overlay(Image.new("RGB", (10, 10)), "x", font, position="middle")
+
+
+class TestFetchOverlayText:
+
+    class FakeResponse:
+        """Mimics requests: .text decodes .content with .encoding, defaulting to ISO-8859-1."""
+        def __init__(self, text, status=200, content_type="text/plain"):
+            self.content = text.encode("utf-8")
+            self.status = status
+            self.headers = {"Content-Type": content_type}
+            self.encoding = "ISO-8859-1"
+
+        @property
+        def text(self):
+            return self.content.decode(self.encoding)
+
+        def raise_for_status(self):
+            if self.status >= 400:
+                raise layout_manager.requests.HTTPError(f"{self.status}")
+
+    def _session(self, monkeypatch, response=None, error=None):
+        class FakeSession:
+            def get(self, url, timeout):
+                if error:
+                    raise error
+                return response
+        monkeypatch.setattr(layout_manager, "get_http_session", lambda: FakeSession())
+
+    def test_returns_stripped_text(self, monkeypatch):
+        self._session(monkeypatch, self.FakeResponse("  Walk: Sam\n"))
+        assert layout_manager.fetch_overlay_text("http://x") == "Walk: Sam"
+
+    def test_utf8_without_charset(self, monkeypatch):
+        self._session(monkeypatch, self.FakeResponse("Sam · Zoë 🐕"))
+        assert layout_manager.fetch_overlay_text("http://x") == "Sam · Zoë 🐕"
+
+    def test_declared_charset_is_respected(self, monkeypatch):
+        response = self.FakeResponse("Sam", content_type="text/plain; charset=ISO-8859-1")
+        self._session(monkeypatch, response)
+        layout_manager.fetch_overlay_text("http://x")
+        assert response.encoding == "ISO-8859-1"
+
+    def test_truncates_long_text(self, monkeypatch):
+        self._session(monkeypatch, self.FakeResponse("a" * 2000))
+        assert len(layout_manager.fetch_overlay_text("http://x")) == layout_manager.MAX_OVERLAY_TEXT_LENGTH
+
+    def test_http_error_returns_none(self, monkeypatch):
+        self._session(monkeypatch, self.FakeResponse("Not found", status=404))
+        assert layout_manager.fetch_overlay_text("http://x") is None
+
+    def test_connection_error_returns_none(self, monkeypatch):
+        self._session(monkeypatch, error=layout_manager.requests.ConnectionError("down"))
+        assert layout_manager.fetch_overlay_text("http://x") is None
